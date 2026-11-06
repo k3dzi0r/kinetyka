@@ -277,7 +277,7 @@ function analyse(){
 }
 
 /* ---------- dłonie (MediaPipe, opcjonalnie, wymaga internetu) ---------- */
-let hands = [], landmarker = null, handsLoading = false, lastVT = -1;
+let hands = [], landmarker = null, handsLoading = false, lastVT = -1, lastDet = 0, detInterval = 33;
 async function enableHands(){
   if (landmarker) return true;
   if (handsLoading) return false;
@@ -305,9 +305,12 @@ async function enableHands(){
 function handsFrame(){
   if (!S.hands || !landmarker || video.readyState < 2){ hands = []; return; }
   if (video.currentTime === lastVT) return;      // ta sama klatka -> zostaw poprzedni wynik
-  lastVT = video.currentTime;
+  const t0 = performance.now();
+  if (t0 - lastDet < detInterval) return;        // dławienie: nie wykrywaj częściej niż co detInterval ms
+  lastVT = video.currentTime; lastDet = t0;
   let r;
-  try { r = landmarker.detectForVideo(video, performance.now()); } catch (e) { return; }
+  try { r = landmarker.detectForVideo(video, t0); } catch (e) { return; }
+  detInterval = Math.max(33, Math.min(110, (performance.now() - t0)*1.6));   // wolny komputer -> rzadziej
   hands = (r.landmarks || []).map(lm => {
     const P = lm.map(p => ({ x:(S.mirror ? 1-p.x : p.x)*cw, y:p.y*ch }));
     const palm = Math.hypot(P[0].x-P[9].x, P[0].y-P[9].y) || 1;
@@ -1229,7 +1232,7 @@ let stream = null;
 async function startCam(deviceId){
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { deviceId: deviceId ? { exact:deviceId } : undefined, width:{ideal:1280}, height:{ideal:720} },
+    video: { deviceId: deviceId ? { exact:deviceId } : undefined, width:{ideal:960}, height:{ideal:540} },
     audio: false
   });
   video.srcObject = stream;
