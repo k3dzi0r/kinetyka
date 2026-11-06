@@ -112,7 +112,7 @@
   </div>
   <div class="hint">
     <kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd> tryby · <kbd>C</kbd> kalibracja · <kbd>Spacja</kbd> pauza · <kbd>H</kbd> ukryj panel · <kbd>M</kbd> lustro · <kbd>D</kbd> mapa ruchu · <kbd>X</kbd> wyczyść pędzel<br>
-    Dłonie: otwarta = odpycha, pięść = przyciąga, szczypta (kciuk+palec wskazujący) = rysuje w Pędzlu.
+    Dłonie: otwarta = odpycha, pięść = przyciąga, szczypta (kciuk+palec wskazujący) = rysuje w Pędzlu; w trybie palca rysuje wyprostowany palec wskazujący (pozostałe zgięte). Wstęga rysuje zawsze.
   </div>
 </div>
 
@@ -310,9 +310,11 @@ function handsFrame(){
     const tipD = [8,12,16,20].reduce((s,i) => s + Math.hypot(P[i].x-P[0].x, P[i].y-P[0].y), 0)/4;
     const pinchD = Math.hypot(P[4].x-P[8].x, P[4].y-P[8].y);
     const pinch = pinchD/palm < 0.35;
+    const ext = i => Math.hypot(P[i].x-P[0].x, P[i].y-P[0].y)/palm;
+    const point = ext(8) > 1.5 && ext(12) < 1.35 && ext(16) < 1.35 && ext(20) < 1.35;   // wyprostowany tylko wskazujący
     // tryb palca: punkt działania = czubek palca wskazującego, szczypta = przyciąganie
     return { pts:P, tip:P[8], cx: S.finger ? P[8].x : (P[0].x+P[9].x)/2, cy: S.finger ? P[8].y : (P[0].y+P[9].y)/2,
-             fist: S.finger ? pinch : tipD/palm < 1.3, pinch, rad2: S.finger ? 16900 : 90000 };
+             fist: S.finger ? pinch : tipD/palm < 1.3, pinch, point, rad2: S.finger ? 16900 : 90000 };
   }).filter(h => !S.roi || (h.cx/cw >= S.roi.x0 && h.cx/cw <= S.roi.x1 && h.cy/ch >= S.roi.y0 && h.cy/ch <= S.roi.y1));
 }
 // przy włączonych dłoniach sylwetka/ruch ciała nie steruje efektami (wyjątek: tryb Sylwetka)
@@ -326,7 +328,7 @@ function handControl(){
   if (!hands.length) return;
   const h = hands[0];
   orb.tx = h.tip.x; orb.ty = h.tip.y;
-  const target = S.mode === 4 ? (h.pinch ? 0.5 : 0) : 0.5;
+  const target = S.mode === 4 ? ((S.finger ? h.point : h.pinch) ? 0.5 : 0) : 0.5;
   orb.e += (target - orb.e)*0.3;
   if (S.mode === 3 || S.mode === 8){
     for (const hd of hands){
@@ -548,11 +550,11 @@ const strokes = {};
 function brushFrame(t){
   pctx.globalCompositeOperation = 'destination-out';
   const ribbon = S.mode === 9;
-  pctx.fillStyle = ribbon ? 'rgba(0,0,0,.012)' : 'rgba(0,0,0,.03)'; pctx.fillRect(0,0,cw,ch);
+  pctx.fillStyle = ribbon ? 'rgba(0,0,0,.07)' : 'rgba(0,0,0,.004)'; pctx.fillRect(0,0,cw,ch);
   pctx.globalCompositeOperation = 'source-over';
   const src = [];
   if (S.hands){
-    hands.forEach((h,i) => { if (h.pinch || ribbon) src.push({ k:'h'+i, x:h.tip.x, y:h.tip.y, w:10 }); });
+    hands.forEach((h,i) => { if (ribbon || (S.finger ? h.point : h.pinch)) src.push({ k:'h'+i, x:h.tip.x, y:h.tip.y, w:10 }); });
   } else if (energy > 0.03){
     src.push({ k:'m', x:orb.x, y:orb.y, w:6 + orb.e*30 });
   }
