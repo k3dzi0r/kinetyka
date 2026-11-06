@@ -1,0 +1,1110 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinetyka</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g' cx='50%25' cy='50%25' r='50%25'%3E%3Cstop offset='0' stop-color='%23fff'/%3E%3Cstop offset='.4' stop-color='%235de0ff'/%3E%3Cstop offset='1' stop-color='%23ff5de0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%2305060a'/%3E%3Ccircle cx='32' cy='32' r='13' fill='url(%23g)'/%3E%3Ccircle cx='13' cy='17' r='3' fill='%235de0ff'/%3E%3Ccircle cx='51' cy='14' r='2.5' fill='%23ff5de0'/%3E%3Ccircle cx='52' cy='48' r='3.5' fill='%23ffd05f'/%3E%3Ccircle cx='14' cy='50' r='2.5' fill='%23b782ff'/%3E%3Ccircle cx='32' cy='7' r='2' fill='%2374ed9b'/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#05060a; --fg:#e8ecf4; --mut:#8a93a8; --acc:#5de0ff; --panel:rgba(12,14,22,.78); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif; overflow:hidden; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  video { display:none; }
+  #panel { position:fixed; top:12px; left:12px; width:270px; padding:14px; border-radius:12px;
+    background:var(--panel); backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,.08);
+    max-height:calc(100% - 24px); overflow:auto; }
+  #panel h1 { font-size:15px; margin:0 0 10px; letter-spacing:.04em; }
+  #panel label { display:block; margin:10px 0 2px; color:var(--mut); font-size:12px; }
+  #panel input[type=range], #panel select { width:100%; }
+  #panel select { background:#10131c; color:var(--fg); border:1px solid #2a3042; border-radius:6px; padding:4px; }
+  .row { display:flex; gap:6px; margin-top:6px; }
+  .row button { flex:1; }
+  #gear { display:none; position:fixed; top:12px; left:12px; width:44px; height:44px; border-radius:50%;
+    font-size:20px; padding:0; opacity:.35; z-index:5; background:var(--panel); }
+  #gear:hover { opacity:1; }
+  #panel[hidden] ~ #gear { display:block; }
+  #modes { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  #modes button { padding:6px 2px; font-size:12.5px; }
+  button { background:#151a28; color:var(--fg); border:1px solid #2a3042; border-radius:8px;
+    padding:7px 8px; cursor:pointer; font:inherit; }
+  button:hover { border-color:var(--acc); }
+  button.on { background:var(--acc); color:#001018; border-color:var(--acc); font-weight:600; }
+  .chk { display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--fg); font-size:13px; cursor:pointer; }
+  #meter { height:8px; background:#10131c; border-radius:4px; overflow:hidden; margin-top:4px; }
+  #meter i { display:block; height:100%; width:0; background:linear-gradient(90deg,#5de0ff,#ff5de0); }
+  .hint { color:var(--mut); font-size:11.5px; margin-top:12px; }
+  kbd { background:#1b2030; border-radius:4px; padding:0 5px; font-size:11px; }
+  #start { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; background:radial-gradient(circle at 50% 40%, #11172a, #05060a 70%); z-index:10; text-align:center; padding:20px; }
+  #start h2 { margin:0; font-size:44px; letter-spacing:.06em; font-weight:700; }
+  #start p { margin:0; color:var(--mut); max-width:520px; }
+  #start button { font-size:20px; padding:14px 34px; background:var(--acc); color:#001018; border:0; font-weight:700; }
+  #start button.alt { font-size:15px; padding:10px 22px; background:#151a28; color:var(--fg); border:1px solid #2a3042; font-weight:500; }
+  #err { color:#ff7a7a; min-height:1.4em; }
+  canvas#c { touch-action:none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<video id="video" playsinline muted></video>
+
+<div id="start">
+  <h2>KINETYKA</h2>
+  <p>Kamerka internetowa jako kontroler ruchowy. Machaj ręką, ruszaj się, wchodź w strefy — cząsteczki i dźwięk reagują.</p>
+  <button id="go">Start kamery</button>
+  <button id="nocam" class="alt">Bez kamery (mysz / dotyk)</button>
+  <div id="err"></div>
+</div>
+
+<div id="panel" hidden>
+  <div class="row" style="justify-content:space-between;margin:0 0 10px"><h1 style="margin:0">KINETYKA</h1><button id="hidePanel" style="flex:none" title="klawisz H">Ukryj ✕</button></div>
+  <div id="modes"></div>
+
+  <label>Ruch wykryty</label>
+  <div id="meter"><i></i></div>
+
+  <label>Próg czułości (niżej = czulej): <b id="thrV"></b></label>
+  <input id="thr" type="range" min="6" max="70" value="22">
+  <label>Siła: <b id="forceV"></b></label>
+  <input id="force" type="range" min="0.2" max="3" step="0.1" value="1">
+  <label>Liczba cząsteczek: <b id="countV"></b></label>
+  <input id="count" type="range" min="500" max="12000" step="500" value="5000">
+  <label>Wykrywanie</label>
+  <select id="detect">
+    <option value="diff">Ruch (różnica klatek)</option>
+    <option value="bg">Obecność (tło, kalibracja)</option>
+  </select>
+  <div class="row"><button id="cal">Kalibruj tło (C)</button><button id="camBtn">Włącz kamerę</button></div>
+  <div class="hint" id="detStatus" style="margin-top:4px"></div>
+  <div class="row"><button id="roiBtn">Zaznacz obszar</button><button id="roiReset">Cały kadr</button></div>
+  <label class="chk"><input type="checkbox" id="autoThr"> auto-czułość</label>
+  <label>Skala</label>
+  <select id="scale"><option value="penta">Pentatonika</option><option value="major">Dur</option><option value="minor">Moll</option></select>
+  <label>Instrument</label>
+  <select id="instr"><option value="triangle">Harfa</option><option value="sine">Flet</option><option value="bell">Dzwonki</option><option value="pluck">Szarpane</option><option value="synth">Syntezator</option></select>
+  <label class="chk"><input type="checkbox" id="metro"> metronom (Perkusja)</label>
+  <input id="bpm" type="range" min="60" max="160" value="100">
+  <label class="chk"><input type="checkbox" id="kiosk"> tryb kiosku (zmiana efektu co 45 s)</label>
+  <label>Kamera</label>
+  <select id="cams"></select>
+
+  <label class="chk"><input type="checkbox" id="twoPlayer" checked> tryb dwóch osób (Bańki, Pong)</label>
+  <label class="chk"><input type="checkbox" id="autoHide"> auto-ukrywanie panelu (8 s)</label>
+  <label class="chk"><input type="checkbox" id="particles" checked> cząsteczki (warstwa)</label>
+  <label class="chk"><input type="checkbox" id="showCam" checked> obraz z kamery w tle</label>
+  <label class="chk"><input type="checkbox" id="showMap"> mapa ruchu (debug)</label>
+  <label class="chk"><input type="checkbox" id="sound" checked> dźwięk</label>
+  <label class="chk"><input type="checkbox" id="mirror" checked> odbicie lustrzane</label>
+  <label class="chk"><input type="checkbox" id="hands"> śledzenie dłoni (internet)</label>
+  <div class="hint" id="handStatus" style="margin-top:2px"></div>
+  <label class="chk"><input type="checkbox" id="finger"> tylko palec wskazujący (zamiast całej dłoni)</label>
+  <label class="chk"><input type="checkbox" id="mic"> mikrofon: reaguj na muzykę</label>
+
+  <div class="row">
+    <button id="reset">Rozrzuć (R)</button>
+    <button id="full">Pełny ekran (F)</button>
+  </div>
+  <div class="row">
+    <button id="rec">● Nagraj</button>
+    <button id="shot">Zdjęcie (P)</button>
+  </div>
+  <div class="hint">
+    <kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd> tryby · <kbd>C</kbd> kalibracja · <kbd>Spacja</kbd> pauza · <kbd>H</kbd> ukryj panel · <kbd>M</kbd> lustro · <kbd>D</kbd> mapa ruchu · <kbd>X</kbd> wyczyść pędzel<br>
+    Dłonie: otwarta = odpycha, pięść = przyciąga, szczypta (kciuk+palec wskazujący) = rysuje w Pędzlu.
+  </div>
+</div>
+
+<button id="gear" title="Pokaż ustawienia (H)">⚙</button>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- stan ---------- */
+const S = { mode:1, thr:22, force:1, count:5000, showCam:true, showMap:false, sound:true, mirror:true, hands:false, mic:false, detect:'diff',
+  scale:'penta', instr:'triangle', bpm:100, metro:false, autoThr:false, kiosk:false, roi:null, particles:true, twoPlayer:true, finger:false, autoHide:false };
+let lastAct = 0;
+const PDEF = { 4:false, 6:false, 9:false, 10:false, 11:false };   // domyślnie bez cząsteczek
+const pops = [];
+let pile = new Float32Array(1), noise = 2, recDest = null;
+let kioskT = 0, kioskI = 0, nextTick = 0, beatN = 0;
+let paused = false, calFrames = 0;
+const bgm = new Float32Array(128*72);
+const ptr = { on:false, x:0, y:0 };
+const bubbles = [];
+let scoreL = 0, scoreR = 0, lastSpawn = 0;
+const MAXP = 12000;
+
+/* ---------- mapa ruchu ---------- */
+const W = 128, H = 72;                     // rozdzielczość analizy (mała = szybko)
+const sm = document.createElement('canvas'); sm.width = W; sm.height = H;
+const sctx = sm.getContext('2d', { willReadFrequently:true });
+const prev = new Uint8Array(W*H);
+const motion = new Float32Array(W*H);
+const blur = new Float32Array(W*H);
+const mapCv = document.createElement('canvas'); mapCv.width = W; mapCv.height = H;
+const mapCtx = mapCv.getContext('2d');
+const mapImg = mapCtx.createImageData(W, H);
+
+/* ---------- płótno ---------- */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const video = document.getElementById('video');
+let cw = 0, ch = 0;
+const pc = document.createElement('canvas');     // warstwa pędzla
+const pctx = pc.getContext('2d');
+function newHomes(){
+  for (let i=0;i<MAXP;i++){ hx[i] = Math.random()*cw; hy[i] = Math.random()*ch; }
+}
+function resize(){
+  cw = cv.width = pc.width = innerWidth; ch = cv.height = pc.height = innerHeight;
+  newHomes();
+  scatter();
+  pile = new Float32Array(Math.ceil(cw/4) + 2);
+  pong.ly = pong.ry = ch/2; pongReset(1);
+}
+
+/* ---------- cząsteczki ---------- */
+const px = new Float32Array(MAXP), py = new Float32Array(MAXP);
+const vx = new Float32Array(MAXP), vy = new Float32Array(MAXP);
+const hx = new Float32Array(MAXP), hy = new Float32Array(MAXP);
+function scatter(){
+  for (let i=0;i<MAXP;i++){
+    px[i] = Math.random()*cw; py[i] = Math.random()*ch;
+    const a = Math.random()*6.283, s = Math.random()*25;
+    vx[i] = Math.cos(a)*s; vy[i] = Math.sin(a)*s;
+  }
+}
+
+let frame = 0;
+const cellIdx = new Int32Array(W*H);
+
+/* ---------- orb (środek ruchu) ---------- */
+const orb = { x:0, y:0, tx:0, ty:0, e:0 };
+let energy = 0;                            // ruch całkowity 0..1
+const ZX = 4, ZY = 3;                      // strefy
+const zoneE = new Float32Array(ZX*ZY), zoneFlash = new Float32Array(ZX*ZY), zoneLast = new Float64Array(ZX*ZY);
+
+/* ---------- analiza klatki ---------- */
+function calibrate(){
+  bgm.fill(0); calFrames = 0;
+  const el = document.getElementById('detStatus');
+  if (el) el.textContent = S.detect === 'bg' ? 'kalibracja: odsuń się od kamery na 2 s…' : '';
+}
+function analyse(){
+  if (video.readyState >= 2){
+    sctx.save();
+    if (S.mirror){ sctx.translate(W,0); sctx.scale(-1,1); }
+    sctx.drawImage(video, 0, 0, W, H);
+    sctx.restore();
+    const d = sctx.getImageData(0,0,W,H).data;
+    const thr = S.thr, useBg = S.detect === 'bg';
+    let dsum = 0;
+    for (let i=0,p=0;i<W*H;i++,p+=4){
+      const g = (d[p]*77 + d[p+1]*150 + d[p+2]*29) >> 8;
+      let diff;
+      if (useBg){
+        if (calFrames < 40){ bgm[i] += (g - bgm[i])/(calFrames+1); diff = 0; }
+        else { diff = Math.abs(g - bgm[i]); bgm[i] += (diff > thr ? 0.002 : 0.03)*(g - bgm[i]); }
+      } else diff = Math.abs(g - prev[i]);
+      prev[i] = g;
+      dsum += diff;
+      const m = diff > thr ? Math.min(1, (diff-thr)/40 + 0.25) : 0;
+      const dec = motion[i]*0.8;
+      motion[i] = m > dec ? m : dec;
+    }
+    if (useBg && calFrames < 40){
+      calFrames++;
+      if (calFrames === 40) document.getElementById('detStatus').textContent = 'tło skalibrowane';
+    }
+    if (S.autoThr){
+      const md = dsum/(W*H);
+      if (md < noise*2 + 1.5) noise += (md - noise)*0.02;
+      S.thr += (Math.max(8, Math.min(60, noise*5 + 8)) - S.thr)*0.02;
+      const te = document.getElementById('thr'); te.value = Math.round(S.thr);
+      document.getElementById('thrV').textContent = te.value;
+    }
+    if (S.roi){
+      const r = S.roi, x0 = r.x0*W, x1 = r.x1*W, y0 = r.y0*H, y1 = r.y1*H;
+      for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+        if (x < x0 || x > x1 || y < y0 || y > y1) motion[y*W+x] = 0;
+      }
+    }
+  } else {
+    for (let i=0;i<W*H;i++) motion[i] *= 0.8;      // bez kamery: tylko mysz / dotyk
+  }
+  if (ptr.on){                                      // mysz / dotyk wstrzykuje "ruch"
+    const pxc = ptr.x/cw*W, pyc = ptr.y/ch*H;
+    for (let dy=-3;dy<=3;dy++) for (let dx=-3;dx<=3;dx++){
+      if (dx*dx+dy*dy > 10) continue;
+      const xx = (pxc+dx)|0, yy = (pyc+dy)|0;
+      if (xx>=0 && xx<W && yy>=0 && yy<H) motion[yy*W+xx] = 1;
+    }
+  }
+  // rozmycie 3x3 -> blur
+  let sum = 0, sx = 0, sy = 0, wsum = 0;
+  zoneE.fill(0);
+  for (let y=0;y<H;y++){
+    for (let x=0;x<W;x++){
+      let a = 0, n = 0;
+      for (let dy=-1;dy<=1;dy++){
+        const yy = y+dy; if (yy<0||yy>=H) continue;
+        for (let dx=-1;dx<=1;dx++){
+          const xx = x+dx; if (xx<0||xx>=W) continue;
+          a += motion[yy*W+xx]; n++;
+        }
+      }
+      const v = a/n;
+      blur[y*W+x] = v;
+      sum += v;
+      if (v > 0.2){ sx += x*v; sy += y*v; wsum += v; }
+      zoneE[Math.min(ZY-1,(y*ZY/H)|0)*ZX + Math.min(ZX-1,(x*ZX/W)|0)] += v;
+    }
+  }
+  energy = Math.min(1, sum/(W*H)*8);
+  const zc = (W/ZX)*(H/ZY);
+  for (let z=0;z<ZX*ZY;z++) zoneE[z] /= zc;
+  if (wsum > 3){
+    orb.tx = sx/wsum/W*cw; orb.ty = sy/wsum/H*ch;
+  }
+  orb.e += (energy - orb.e)*0.2;
+}
+
+/* ---------- dłonie (MediaPipe, opcjonalnie, wymaga internetu) ---------- */
+let hands = [], landmarker = null, handsLoading = false, lastVT = -1;
+async function enableHands(){
+  if (landmarker) return true;
+  if (handsLoading) return false;
+  handsLoading = true;
+  const st = document.getElementById('handStatus');
+  st.textContent = 'ładuję model dłoni…';
+  try {
+    const base = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+    const vision = await import(base + '/vision_bundle.mjs');
+    const fs = await vision.FilesetResolver.forVisionTasks(base + '/wasm');
+    const opts = d => ({
+      baseOptions: { modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task', delegate:d },
+      runningMode:'VIDEO', numHands:2
+    });
+    try { landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('GPU')); }
+    catch (e) { landmarker = await vision.HandLandmarker.createFromOptions(fs, opts('CPU')); }
+    st.textContent = 'dłonie aktywne';
+  } catch (e) {
+    st.textContent = 'nie udało się załadować modelu (brak internetu?)';
+    landmarker = null;
+  }
+  handsLoading = false;
+  return !!landmarker;
+}
+function handsFrame(){
+  if (!S.hands || !landmarker || video.readyState < 2){ hands = []; return; }
+  if (video.currentTime === lastVT) return;      // ta sama klatka -> zostaw poprzedni wynik
+  lastVT = video.currentTime;
+  let r;
+  try { r = landmarker.detectForVideo(video, performance.now()); } catch (e) { return; }
+  hands = (r.landmarks || []).map(lm => {
+    const P = lm.map(p => ({ x:(S.mirror ? 1-p.x : p.x)*cw, y:p.y*ch }));
+    const palm = Math.hypot(P[0].x-P[9].x, P[0].y-P[9].y) || 1;
+    const tipD = [8,12,16,20].reduce((s,i) => s + Math.hypot(P[i].x-P[0].x, P[i].y-P[0].y), 0)/4;
+    const pinchD = Math.hypot(P[4].x-P[8].x, P[4].y-P[8].y);
+    const pinch = pinchD/palm < 0.35;
+    // tryb palca: punkt działania = czubek palca wskazującego, szczypta = przyciąganie
+    return { pts:P, tip:P[8], cx: S.finger ? P[8].x : (P[0].x+P[9].x)/2, cy: S.finger ? P[8].y : (P[0].y+P[9].y)/2,
+             fist: S.finger ? pinch : tipD/palm < 1.3, pinch, rad2: S.finger ? 16900 : 90000 };
+  }).filter(h => !S.roi || (h.cx/cw >= S.roi.x0 && h.cx/cw <= S.roi.x1 && h.cy/ch >= S.roi.y0 && h.cy/ch <= S.roi.y1));
+}
+// przy włączonych dłoniach sylwetka/ruch ciała nie steruje efektami (wyjątek: tryb Sylwetka)
+function handsOnly(){ return S.hands && S.mode !== 5; }
+function handControl(){
+  if (handsOnly()){
+    energy = 0;
+    if (S.mode === 3 || S.mode === 8) zoneE.fill(0);
+    if (!hands.length) orb.e *= 0.7;
+  }
+  if (!hands.length) return;
+  const h = hands[0];
+  orb.tx = h.tip.x; orb.ty = h.tip.y;
+  const target = S.mode === 4 ? (h.pinch ? 0.5 : 0) : 0.5;
+  orb.e += (target - orb.e)*0.3;
+  if (S.mode === 3 || S.mode === 8){
+    for (const hd of hands){
+      const col = Math.min(ZX-1, Math.max(0, (hd.tip.x/cw*ZX)|0));
+      const row = Math.min(ZY-1, Math.max(0, (hd.tip.y/ch*ZY)|0));
+      const z = row*ZX + col;
+      zoneE[z] = Math.max(zoneE[z], 0.1);
+    }
+  }
+}
+
+/* ---------- mikrofon (reakcja na muzykę) ---------- */
+let analyser = null, micData = null, bassAvg = 0, lastBeat = 0, beatFlash = 0;
+async function enableMic(){
+  initAudio();
+  const ms = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+  const src = ac.createMediaStreamSource(ms);
+  analyser = ac.createAnalyser(); analyser.fftSize = 256;
+  src.connect(analyser);
+  micData = new Uint8Array(analyser.frequencyBinCount);
+}
+function micFrame(now){
+  beatFlash *= 0.9;
+  if (!S.mic || !analyser) return;
+  analyser.getByteFrequencyData(micData);
+  let b = 0; for (let i=0;i<6;i++) b += micData[i];
+  b /= 6*255;
+  bassAvg += (b - bassAvg)*0.05;
+  if (b > 0.3 && b > bassAvg*1.3 && now - lastBeat > 180){
+    lastBeat = now; beatFlash = 1;
+    const cx = cw/2, cy = ch/2, k = 6 + b*14;
+    for (let i=0;i<S.count;i++){
+      const dx = px[i]-cx, dy = py[i]-cy, d = Math.hypot(dx,dy) || 1;
+      vx[i] += dx/d*k; vy[i] += dy/d*k;
+    }
+  }
+}
+
+/* ---------- piasek ---------- */
+let pileTmp = new Float32Array(1);
+function sandFrame(){
+  const n = pile.length;
+  if (pileTmp.length !== n) pileTmp = new Float32Array(n);
+  for (let c=0;c<n;c++){
+    const l = pile[c>0?c-1:c], r = pile[c<n-1?c+1:c];
+    pileTmp[c] = pile[c] + (l + r - 2*pile[c])*0.25;
+  }
+  pile.set(pileTmp);
+  const ho = handsOnly();
+  for (let c=0;c<n;c++){
+    const h0 = pile[c]; if (h0 < 1) continue;
+    const sx = c*4+2, sy = ch - h0;
+    let hit = false;
+    if (!ho) hit = mAt(sx, sy-10) > 0.3;
+    else for (const hd of hands) if (Math.abs(hd.cx - sx) < 100 && hd.cy > sy - 160){ hit = true; break; }
+    if (hit){
+      pile[c] = Math.max(0, h0 - 3);
+      const j = (Math.random()*S.count)|0;
+      px[j] = sx; py[j] = sy-2; vx[j] = (Math.random()-0.5)*10; vy[j] = -2 - Math.random()*8;
+    }
+  }
+}
+function drawPile(){
+  const g = ctx.createLinearGradient(0, ch*0.45, 0, ch);
+  g.addColorStop(0,'#f1cf8a'); g.addColorStop(1,'#a8742f');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0,ch);
+  for (let c=0;c<pile.length;c++) ctx.lineTo(c*4, ch - pile[c]);
+  ctx.lineTo(cw+4, ch); ctx.closePath(); ctx.fill();
+}
+
+/* ---------- rój ---------- */
+const FX = 32, FY = 18, flock = new Float32Array(FX*FY*5);
+function buildFlock(N){
+  flock.fill(0);
+  for (let i=0;i<N;i++){
+    const gi = (Math.min(FX-1,(px[i]/cw*FX)|0) + Math.min(FY-1,(py[i]/ch*FY)|0)*FX)*5;
+    flock[gi] += vx[i]; flock[gi+1] += vy[i]; flock[gi+2] += px[i]; flock[gi+3] += py[i]; flock[gi+4]++;
+  }
+}
+
+/* ---------- pomocnicze ---------- */
+function burst(x, y, n, sp){
+  if (!S.particles) return;
+  for (let k=0;k<n;k++){
+    const j = (Math.random()*S.count)|0, a = Math.random()*6.283, s = sp*(0.4 + Math.random());
+    px[j] = x; py[j] = y; vx[j] = Math.cos(a)*s; vy[j] = Math.sin(a)*s;
+  }
+}
+
+/* ---------- gra w życie ---------- */
+const life = new Uint8Array(W*H), lage = new Uint8Array(W*H), lnext = new Uint8Array(W*H);
+let lifeT = 0;
+function lifeFrame(){
+  if (handsOnly()){
+    for (const hd of hands){
+      const cx = (hd.tip.x/cw*W)|0, cy = (hd.tip.y/ch*H)|0;
+      for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++){
+        const xx = cx+dx, yy = cy+dy;
+        if (xx>=0 && xx<W && yy>=0 && yy<H && Math.random()<0.6) life[yy*W+xx] = 1;
+      }
+    }
+  } else {
+    for (let k=0;k<W*H;k++) if (blur[k] > 0.3 && Math.random() < 0.5) life[k] = 1;
+  }
+  if (++lifeT % 5) return;
+  for (let y=0;y<H;y++){
+    const ym = ((y+H-1)%H)*W, y0 = y*W, yp = ((y+1)%H)*W;
+    for (let x=0;x<W;x++){
+      const xm = (x+W-1)%W, xp = (x+1)%W;
+      const n = life[ym+xm]+life[ym+x]+life[ym+xp]+life[y0+xm]+life[y0+xp]+life[yp+xm]+life[yp+x]+life[yp+xp];
+      const a = life[y0+x], nx = (n === 3 || (a && n === 2)) ? 1 : 0;
+      lnext[y0+x] = nx;
+      lage[y0+x] = nx ? (a ? Math.min(255, lage[y0+x]+1) : 0) : 0;
+    }
+  }
+  life.set(lnext);
+}
+function drawLife(){
+  const cwid = cw/W, chei = ch/H;
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const k = y*W+x; if (!life[k]) continue;
+    ctx.fillStyle = `hsl(${(170 + lage[k]*5)%360},90%,${55 + Math.min(25,lage[k])}%)`;
+    ctx.fillRect(x*cwid, y*chei, cwid-1, chei-1);
+  }
+}
+
+/* ---------- pong ---------- */
+const pong = { bx:0, by:0, vx:0, vy:0, ly:0, ry:0 };
+function pongReset(dir){
+  pong.bx = cw/2; pong.by = ch/2; pong.vx = dir*Math.max(6, cw/220); pong.vy = (Math.random()-0.5)*6;
+}
+function pongFrame(){
+  const ph = ch*0.2, sum = [0,0], ws = [0,0];
+  if (S.hands){
+    for (const hd of hands){ const s = (!S.twoPlayer || hd.cx < cw/2) ? 0 : 1; sum[s] += hd.cy; ws[s]++; }
+    if (ws[0]) pong.ly += (sum[0]/ws[0] - pong.ly)*0.3;
+    if (ws[1]) pong.ry += (sum[1]/ws[1] - pong.ry)*0.3;
+  } else {
+    for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+      const v = blur[y*W+x];
+      if (v > 0.2){ const s = (!S.twoPlayer || x < W/2) ? 0 : 1; sum[s] += v*y; ws[s] += v; }
+    }
+    if (ws[0] > 1) pong.ly += (sum[0]/ws[0]/H*ch - pong.ly)*0.25;
+    if (ws[1] > 1) pong.ry += (sum[1]/ws[1]/H*ch - pong.ry)*0.25;
+  }
+  if (!S.twoPlayer) pong.ry += Math.max(-9, Math.min(9, pong.by - pong.ry));   // komputer gra prawą paletką
+  pong.bx += pong.vx; pong.by += pong.vy;
+  if (pong.by < 10){ pong.by = 10; pong.vy = Math.abs(pong.vy); }
+  else if (pong.by > ch-10){ pong.by = ch-10; pong.vy = -Math.abs(pong.vy); }
+  const hitL = pong.vx < 0 && pong.bx < 60 && pong.bx > 20 && Math.abs(pong.by-pong.ly) < ph/2 + 12;
+  const hitR = pong.vx > 0 && pong.bx > cw-60 && pong.bx < cw-20 && Math.abs(pong.by-pong.ry) < ph/2 + 12;
+  if (hitL || hitR){
+    const py0 = hitL ? pong.ly : pong.ry;
+    pong.vx = Math.max(-26, Math.min(26, -pong.vx*1.07));
+    pong.vy = Math.max(-16, Math.min(16, pong.vy + (pong.by-py0)/(ph/2)*5));
+    burst(pong.bx, pong.by, 40, 8); ping(hitL ? 4 : 7, 0.25);
+  }
+  if (pong.bx < -20){ scoreR++; ping(0, 0.3); pongReset(1); }
+  else if (pong.bx > cw+20){ scoreL++; ping(0, 0.3); pongReset(-1); }
+}
+function drawPong(){
+  const ph = ch*0.2;
+  ctx.setLineDash([12,14]); ctx.strokeStyle = 'rgba(255,255,255,.25)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cw/2,0); ctx.lineTo(cw/2,ch); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = '#fff'; ctx.shadowBlur = 20; ctx.shadowColor = '#5de0ff';
+  ctx.fillRect(40, pong.ly-ph/2, 16, ph); ctx.fillRect(cw-56, pong.ry-ph/2, 16, ph);
+  ctx.beginPath(); ctx.arc(pong.bx, pong.by, 12, 0, 6.283); ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+/* ---------- bańki (gra) ---------- */
+function mAt(x, y){
+  const cx = Math.min(W-1, Math.max(0, (x/cw*W)|0)), cy = Math.min(H-1, Math.max(0, (y/ch*H)|0));
+  return blur[cy*W+cx];
+}
+function popBubble(b){
+  if (!S.twoPlayer || b.x < cw/2) scoreL++; else scoreR++;
+  ping(Math.round(b.hue/360*9), 0.22);
+  pops.push({ x:b.x, y:b.y, r:b.r, hue:b.hue, age:0 });
+  burst(b.x, b.y, 60, 10);
+}
+function bubblesFrame(now){
+  if (now - lastSpawn > 380 && bubbles.length < 28){
+    lastSpawn = now;
+    const r = 28 + Math.random()*40;
+    bubbles.push({ x:r + Math.random()*(cw-2*r), y:ch+r, r, vy:0.8 + Math.random()*1.4, hue:Math.random()*360, ph:Math.random()*6.28 });
+  }
+  for (let i=bubbles.length-1;i>=0;i--){
+    const b = bubbles[i];
+    b.y -= b.vy; b.x += Math.sin(now*0.002 + b.ph)*0.6;
+    const o = b.r*0.5;
+    let hit = !handsOnly() && (mAt(b.x,b.y) > 0.4 || mAt(b.x+o,b.y) > 0.4 || mAt(b.x-o,b.y) > 0.4 || mAt(b.x,b.y+o) > 0.4 || mAt(b.x,b.y-o) > 0.4);
+    if (!hit) for (const hd of hands) if (Math.hypot(hd.tip.x-b.x, hd.tip.y-b.y) < b.r + 10){ hit = true; break; }
+    if (hit){ popBubble(b); bubbles.splice(i,1); continue; }
+    if (b.y < -b.r) bubbles.splice(i,1);
+  }
+}
+function drawBubbles(){
+  for (let i=pops.length-1;i>=0;i--){
+    const p = pops[i]; p.age++;
+    const a = 1 - p.age/22;
+    if (a <= 0){ pops.splice(i,1); continue; }
+    ctx.lineWidth = 4*a;
+    ctx.strokeStyle = `hsla(${p.hue},95%,80%,${a})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r*(1 + p.age*0.06), 0, 6.283); ctx.stroke();
+  }
+  for (const b of bubbles){
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `hsla(${b.hue},90%,75%,.85)`;
+    ctx.fillStyle = `hsla(${b.hue},85%,70%,.14)`;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,6.283); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.beginPath(); ctx.arc(b.x-b.r*.25, b.y-b.r*.28, b.r*.45, Math.PI*1.1, Math.PI*1.65); ctx.stroke();
+  }
+}
+
+/* ---------- pędzel ---------- */
+const strokes = {};
+function brushFrame(t){
+  pctx.globalCompositeOperation = 'destination-out';
+  const ribbon = S.mode === 9;
+  pctx.fillStyle = ribbon ? 'rgba(0,0,0,.012)' : 'rgba(0,0,0,.03)'; pctx.fillRect(0,0,cw,ch);
+  pctx.globalCompositeOperation = 'source-over';
+  const src = [];
+  if (S.hands){
+    hands.forEach((h,i) => { if (h.pinch || ribbon) src.push({ k:'h'+i, x:h.tip.x, y:h.tip.y, w:10 }); });
+  } else if (energy > 0.03){
+    src.push({ k:'m', x:orb.x, y:orb.y, w:6 + orb.e*30 });
+  }
+  const keys = new Set(src.map(s => s.k));
+  for (const k in strokes) if (!keys.has(k)) delete strokes[k];
+  src.forEach(s => {
+    const p = strokes[s.k];
+    if (p && Math.hypot(s.x-p.x, s.y-p.y) < 300){
+      pctx.strokeStyle = `hsl(${(t*0.06 + (s.k==='h1'?180:0))%360},100%,60%)`;
+      pctx.lineWidth = ribbon ? s.w*1.3 : s.w; pctx.lineCap = 'round';
+      if (ribbon){ pctx.shadowBlur = 25; pctx.shadowColor = pctx.strokeStyle; }
+      pctx.beginPath(); pctx.moveTo(p.x,p.y); pctx.lineTo(s.x,s.y); pctx.stroke();
+      pctx.shadowBlur = 0;
+    }
+    strokes[s.k] = { x:s.x, y:s.y };
+  });
+}
+
+/* ---------- dźwięk ---------- */
+let ac = null, master = null, thOsc = null, thGain = null;
+const SCALES = { penta:[0,2,4,7,9], major:[0,2,4,5,7,9,11], minor:[0,2,3,5,7,8,10] };
+function freq(step){
+  const sc = SCALES[S.scale] || SCALES.penta, n = sc.length;
+  const oct = Math.floor(step/n), s = sc[((step%n)+n)%n];
+  return 440*Math.pow(2,(48+12*oct+s-69)/12);
+}
+function initAudio(){
+  if (ac) return;
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = 0.55;
+  const comp = ac.createDynamicsCompressor();
+  const dl = ac.createDelay(1); dl.delayTime.value = 0.27;
+  const fb = ac.createGain(); fb.gain.value = 0.38;
+  const wet = ac.createGain(); wet.gain.value = 0.35;
+  master.connect(comp);
+  master.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(wet); wet.connect(comp);
+  comp.connect(ac.destination);
+  recDest = ac.createMediaStreamDestination(); comp.connect(recDest);
+  thOsc = ac.createOscillator(); thOsc.type = 'sine';
+  thGain = ac.createGain(); thGain.gain.value = 0;
+  thOsc.connect(thGain); thGain.connect(master); thOsc.start();
+}
+function ping(step, vel){
+  if (!ac || !S.sound) return;
+  const t = ac.currentTime, f = freq(step), ins = S.instr;
+  const dur = ins === 'bell' ? 1.6 : ins === 'pluck' ? 0.45 : ins === 'sine' ? 0.8 : 1.1;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.02, vel), t + (ins === 'synth' ? 0.03 : 0.008));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let out = g;
+  if (ins === 'pluck' || ins === 'synth'){
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(ins === 'pluck' ? 3500 : 2200, t);
+    lp.frequency.exponentialRampToValueAtTime(400, t + dur);
+    g.connect(lp); out = lp;
+  }
+  out.connect(master);
+  const parts = ins === 'bell' ? [[1,1],[2.76,0.45],[5.4,0.2]] : [[1,1]];
+  const type = (ins === 'sine' || ins === 'bell') ? 'sine' : ins === 'synth' ? 'sawtooth' : 'triangle';
+  for (const [r,a] of parts){
+    const o = ac.createOscillator(); o.type = type; o.frequency.value = f*r;
+    const pg = ac.createGain(); pg.gain.value = a*(ins === 'synth' ? 0.5 : 1);
+    o.connect(pg); pg.connect(g); o.start(t); o.stop(t + dur + 0.1);
+  }
+}
+
+/* ---------- perkusja ---------- */
+let noiseBuf = null;
+function noiseHit(t, dur, ftype, f, vel){
+  if (!noiseBuf){
+    noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+  }
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const fl = ac.createBiquadFilter(); fl.type = ftype; fl.frequency.value = f;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(master); s.start(t); s.stop(t + dur + 0.05);
+}
+function toneHit(t, f0, f1, dur, vel, type){
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur*0.6);
+  g.gain.setValueAtTime(vel, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+}
+const DRUMS = [
+  {n:'Crash',k:'crash'},{n:'Open hat',k:'ohat'},{n:'Tom 1',k:'tom',f:260},{n:'Tom 2',k:'tom',f:200},
+  {n:'Clap',k:'clap'},{n:'Rim',k:'rim'},{n:'Tom 3',k:'tom',f:150},{n:'Tom 4',k:'tom',f:110},
+  {n:'Kick',k:'kick'},{n:'Snare',k:'snare'},{n:'Hi-hat',k:'hat'},{n:'Kick',k:'kick'}
+];
+function drum(d, vel){
+  if (!ac || !S.sound) return;
+  const t = ac.currentTime; vel = Math.min(1, 0.5 + vel);
+  switch (d.k){
+    case 'kick': toneHit(t, 160, 42, 0.4, vel); break;
+    case 'snare': noiseHit(t, 0.2, 'bandpass', 1800, vel*0.7); toneHit(t, 200, 120, 0.12, vel*0.5, 'triangle'); break;
+    case 'hat': noiseHit(t, 0.05, 'highpass', 7000, vel*0.4); break;
+    case 'ohat': noiseHit(t, 0.35, 'highpass', 7000, vel*0.4); break;
+    case 'clap': for (let i=0;i<3;i++) noiseHit(t + i*0.012, 0.08, 'bandpass', 1300, vel*0.6); break;
+    case 'tom': toneHit(t, d.f*1.4, d.f*0.6, 0.35, vel*0.8); break;
+    case 'crash': noiseHit(t, 1.3, 'highpass', 5000, vel*0.45); break;
+    case 'rim': toneHit(t, 900, 700, 0.05, vel*0.4, 'square'); break;
+  }
+}
+let lastSparkle = 0;
+function audioFrame(now){
+  if (!ac) return;
+  if (ac.state === 'suspended') ac.resume();
+  if (S.metro && S.mode === 8 && S.sound){
+    if (nextTick < ac.currentTime) nextTick = ac.currentTime + 0.05;
+    while (nextTick < ac.currentTime + 0.12){
+      const acc = beatN % 4 === 0;
+      toneHit(nextTick, acc ? 1500 : 1000, acc ? 1500 : 1000, 0.04, 0.2);
+      nextTick += 60/S.bpm; beatN++;
+    }
+  } else nextTick = 0;
+  // theremin tylko w trybie 2
+  if ((S.mode === 2 || S.mode === 4 || S.mode === 9) && S.sound){
+    const f = 110*Math.pow(2, (orb.x/cw)*3.2);
+    thOsc.frequency.setTargetAtTime(f, ac.currentTime, 0.04);
+    const vol = Math.min(0.28, orb.e*2.2) * (1 - (orb.y/ch)*0.5);
+    thGain.gain.setTargetAtTime(vol, ac.currentTime, 0.06);
+  } else {
+    thGain.gain.setTargetAtTime(0, ac.currentTime, 0.05);
+  }
+  // iskry w trybie 1
+  if (S.mode === 1 && S.sound && energy > 0.12 && now - lastSparkle > 140){
+    lastSparkle = now;
+    const step = Math.round((orb.tx/cw)*9) + (energy > 0.5 ? 5 : 0);
+    ping(step, 0.08 + energy*0.25);
+  }
+}
+
+/* ---------- strefy ---------- */
+function zonesFrame(now){
+  for (let z=0;z<ZX*ZY;z++){
+    zoneFlash[z] *= 0.92;
+    if (zoneE[z] > 0.07 && now - zoneLast[z] > (S.mode === 8 ? 150 : 260)){
+      zoneLast[z] = now;
+      zoneFlash[z] = 1;
+      const col = z % ZX, row = (z/ZX)|0;
+      if (S.mode === 8) drum(DRUMS[z], Math.min(0.5, zoneE[z]*3));
+      else ping(col + (ZY-1-row)*ZX, 0.15 + Math.min(0.3, zoneE[z]));
+      // wybuch cząsteczek w strefie
+      const cx = (col+0.5)*cw/ZX, cy = (row+0.5)*ch/ZY;
+      for (let i=0;S.particles && i<S.count;i+=7){
+        const dx = px[i]-cx, dy = py[i]-cy;
+        if (dx*dx+dy*dy < 220*220){ const a = Math.atan2(dy,dx); vx[i] += Math.cos(a)*14; vy[i] += Math.sin(a)*14; }
+      }
+    }
+  }
+}
+
+/* ---------- fizyka ---------- */
+function physics(){
+  const F = S.force;
+  const N = S.count;
+  const sx = W/cw, sy = H/ch;
+  orb.x += (orb.tx-orb.x)*0.12; orb.y += (orb.ty-orb.y)*0.12;
+  const mode = S.mode;
+  if (mode === 4 || mode === 9 || mode === 10 || !S.particles) return;   // tryby bez cząsteczek
+  if (mode === 12) buildFlock(N);
+  frame++;
+  const ho = handsOnly();
+  let nc = 0;
+  if (mode === 5){ for (let q=0;q<W*H;q++) if (blur[q] > 0.25) cellIdx[nc++] = q; }
+  const spring = mode === 5 ? 0.012 : 0.0016, damp = mode === 5 ? 0.86 : 0.95;
+  for (let i=0;i<N;i++){
+    let x = px[i], y = py[i], u = vx[i], v = vy[i];
+    let cx = (x*sx)|0, cy = (y*sy)|0;
+    if (cx < 1) cx = 1; else if (cx > W-2) cx = W-2;
+    if (cy < 1) cy = 1; else if (cy > H-2) cy = H-2;
+    const k = cy*W+cx;
+    const m = blur[k];
+    if (mode === 5){
+      // sylwetka: cząsteczki wypełniają ruszające się piksele
+      if (nc && ((i+frame)&3) === 0){
+        const c = cellIdx[(Math.random()*nc)|0];
+        hx[i] = ((c%W)+Math.random())*cw/W; hy[i] = (((c/W)|0)+Math.random())*ch/H;
+      }
+    } else if (!ho){
+      // odpychanie od gorących punktów ruchu (minus gradient)
+      u -= (blur[k+1]-blur[k-1])*7*F;
+      v -= (blur[k+W]-blur[k-W])*7*F;
+      if (m > 0.06){
+        u += (Math.random()-0.5)*m*9*F;
+        v += (Math.random()-0.5)*m*9*F;
+      }
+    }
+    // dłonie: otwarta odpycha, pięść przyciąga
+    for (let q=0;q<hands.length;q++){
+      const hd = hands[q];
+      const dx = x-hd.cx, dy = y-hd.cy, d2 = dx*dx+dy*dy+400;
+      if (d2 < hd.rad2){
+        const f = 2.2*F*(1 - d2/hd.rad2)/Math.sqrt(d2);
+        if (hd.fist){ u -= dx*f*1.2; v -= dy*f*1.2; } else { u += dx*f; v += dy*f; }
+      }
+    }
+    if (mode === 2){
+      const dx = orb.x-x, dy = orb.y-y;
+      u += dx*0.0009*F - dy*0.0012*F;
+      v += dy*0.0009*F + dx*0.0012*F;
+      u *= 0.965; v *= 0.965;
+    } else if (mode === 7){
+      v += 0.28; u *= 0.995; v *= 0.995;
+    } else if (mode === 12){
+      const gi = (Math.min(FX-1,(x/cw*FX)|0) + Math.min(FY-1,(y/ch*FY)|0)*FX)*5, n = flock[gi+4] || 1;
+      u += (flock[gi]/n - u)*0.06 + (flock[gi+2]/n - x)*0.0008 + (Math.random()-0.5)*0.5;
+      v += (flock[gi+1]/n - v)*0.06 + (flock[gi+3]/n - y)*0.0008 + (Math.random()-0.5)*0.5;
+      const sp = Math.hypot(u,v);
+      if (sp > 7){ u *= 7/sp; v *= 7/sp; } else if (sp < 1.2){ u += Math.random()-0.5; v += Math.random()-0.5; }
+    } else {
+      u += (hx[i]-x)*spring;
+      v += (hy[i]-y)*spring;
+      u *= damp; v *= damp;
+    }
+    x += u; y += v;
+    if (mode === 7){
+      if (x < 0){ x = 0; u = -u*0.5; } else if (x > cw){ x = cw; u = -u*0.5; }
+      const c = Math.min(pile.length-1, (x/4)|0);
+      if (y >= ch - pile[c]){
+        if (pile[c] < ch*0.5) pile[c] += 0.45;
+        x = Math.random()*cw; y = -5; u = 0; v = 1 + Math.random()*2;
+      }
+    } else {
+      if (x < 0){ x = 0; u = -u*0.6; } else if (x > cw){ x = cw; u = -u*0.6; }
+      if (y < 0){ y = 0; v = -v*0.6; } else if (y > ch){ y = ch; v = -v*0.6; }
+    }
+    px[i]=x; py[i]=y; vx[i]=u; vy[i]=v;
+  }
+}
+
+/* ---------- rysowanie ---------- */
+const B = 24;
+function draw(t){
+  const mir = S.mirror;
+  if (S.showCam && video.readyState >= 2){
+    ctx.save();
+    if (mir){ ctx.translate(cw,0); ctx.scale(-1,1); }
+    ctx.drawImage(video,0,0,cw,ch);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(0,0,0,.68)'; ctx.fillRect(0,0,cw,ch);
+  } else {
+    ctx.fillStyle = 'rgba(5,6,10,.2)'; ctx.fillRect(0,0,cw,ch);
+  }
+
+  if (S.showMap){
+    const dd = mapImg.data;
+    for (let i=0;i<W*H;i++){ const v = Math.min(255, blur[i]*400); dd[i*4]=v; dd[i*4+1]=v*0.6; dd[i*4+2]=255-v*0.4; dd[i*4+3]=v>8?170:0; }
+    mapCtx.putImageData(mapImg,0,0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mapCv,0,0,cw,ch);
+  }
+
+  if (S.mode === 3 || S.mode === 8){
+    ctx.lineWidth = 1;
+    for (let z=0;z<ZX*ZY;z++){
+      const col = z%ZX, row = (z/ZX)|0;
+      const x = col*cw/ZX, y = row*ch/ZY, w = cw/ZX, h = ch/ZY;
+      ctx.fillStyle = `rgba(93,224,255,${zoneFlash[z]*0.35})`;
+      ctx.fillRect(x+4,y+4,w-8,h-8);
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.strokeRect(x+4,y+4,w-8,h-8);
+      if (S.mode === 8){
+        ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = '600 20px system-ui,sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(DRUMS[z].n, x+w/2, y+h/2);
+      }
+    }
+  }
+
+  if (S.mode === 7) drawPile();
+  if (S.mode === 6) drawBubbles();
+  ctx.globalCompositeOperation = 'lighter';
+  if (S.mode === 4 || S.mode === 9){
+    ctx.drawImage(pc,0,0);
+  } else if (S.mode === 10){
+    drawLife();
+  } else if (S.particles){
+    const N = S.count, per = Math.ceil(N/B);
+    const sz = cw > 1500 ? 3 : 2;
+    for (let b=0;b<B;b++){
+      const hue = S.mode === 7 ? 28 + b*1.2 : S.mode === 12 ? 50 + b*3 : (b*360/B + t*0.02 + beatFlash*60)%360;
+      ctx.fillStyle = `hsla(${hue},100%,${60 + beatFlash*20}%,.85)`;
+      const end = Math.min(N,(b+1)*per);
+      for (let i=b*per;i<end;i++) ctx.fillRect(px[i],py[i],sz,sz);
+    }
+  }
+
+  if (S.mode === 2){
+    const r = 40 + orb.e*160;
+    const g = ctx.createRadialGradient(orb.x,orb.y,0,orb.x,orb.y,r);
+    g.addColorStop(0,'rgba(255,255,255,.9)'); g.addColorStop(0.25,'rgba(93,224,255,.5)'); g.addColorStop(1,'rgba(93,224,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(orb.x,orb.y,r,0,6.283); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+
+  if (S.mode === 11) drawPong();
+  if (S.mode === 6 || S.mode === 11){
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = '700 56px system-ui,sans-serif'; ctx.textAlign = 'center';
+    if (S.mode === 6 && !S.twoPlayer) ctx.fillText(scoreL, cw/2, 76);
+    else { ctx.fillText(scoreL, cw*0.25, 76); ctx.fillText(scoreR, cw*0.75, 76); }
+    if (S.mode === 6 && S.twoPlayer){
+      ctx.setLineDash([10,14]); ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cw/2,0); ctx.lineTo(cw/2,ch); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  if (S.roi){
+    const r = S.roi;
+    ctx.setLineDash([10,8]); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 2;
+    ctx.strokeRect(r.x0*cw, r.y0*ch, (r.x1-r.x0)*cw, (r.y1-r.y0)*ch); ctx.setLineDash([]);
+  }
+  if (selecting && selRect){
+    ctx.setLineDash([6,6]); ctx.strokeStyle = '#5de0ff'; ctx.lineWidth = 2;
+    ctx.strokeRect(selRect.x0, selRect.y0, selRect.x1-selRect.x0, selRect.y1-selRect.y0); ctx.setLineDash([]);
+  }
+  if (paused){
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '600 28px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('PAUZA', cw/2, 50);
+  }
+  // znaczniki dłoni
+  for (const hd of hands){
+    ctx.fillStyle = hd.pinch ? '#7dff9a' : (hd.fist ? '#ff7a7a' : '#ffffff');
+    for (const i of (S.finger ? [8] : [0,4,8,12,16,20])){
+      ctx.beginPath(); ctx.arc(hd.pts[i].x, hd.pts[i].y, i===8 ? (S.finger ? 13 : 9) : 5, 0, 6.283); ctx.fill();
+    }
+  }
+}
+
+/* ---------- pętla ---------- */
+const meter = document.querySelector('#meter i');
+function loop(t){
+  if (S.autoHide && !$('panel').hidden && t - lastAct > 8000) $('panel').hidden = true;
+  if (S.kiosk && t - kioskT > 45000){
+    kioskT = t;
+    const list = [1,2,5,6,7,9,10,12];
+    kioskI = (kioskI+1) % list.length;
+    setMode(list[kioskI]);
+  }
+  if (!paused){
+    analyse();
+    handsFrame();
+    handControl();
+    physics();
+    if (S.mode === 3 || S.mode === 8) zonesFrame(t);
+    if (S.mode === 6) bubblesFrame(t);
+    if (S.mode === 7) sandFrame();
+    if (S.mode === 10) lifeFrame();
+    if (S.mode === 11) pongFrame();
+    micFrame(t);
+    if (S.mode === 4 || S.mode === 9) brushFrame(t);
+    audioFrame(t);
+  }
+  draw(t);
+  meter.style.width = (energy*100).toFixed(0) + '%';
+  requestAnimationFrame(loop);
+}
+
+/* ---------- kamera ---------- */
+let stream = null;
+async function startCam(deviceId){
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { deviceId: deviceId ? { exact:deviceId } : undefined, width:{ideal:1280}, height:{ideal:720} },
+    audio: false
+  });
+  video.srcObject = stream;
+  await video.play();
+  const sel = document.getElementById('cams');
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  sel.innerHTML = '';
+  devs.forEach((d,i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId; o.textContent = d.label || ('Kamera ' + (i+1));
+    sel.appendChild(o);
+  });
+  const cur = stream.getVideoTracks()[0].getSettings().deviceId;
+  if (cur) sel.value = cur;
+  prev.fill(0); motion.fill(0);
+}
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const saved = (() => { try { return JSON.parse(localStorage.getItem('kinetyka')) || {}; } catch (e) { return {}; } })();
+const MODES = [[1,'Rozrzut','1'],[2,'Podążaj','2'],[3,'Strefy','3'],[4,'Pędzel','4'],[5,'Sylwetka','5'],[6,'Bańki','6'],
+               [7,'Piasek','7'],[8,'Perkusja','8'],[9,'Wstęga','9'],[10,'Życie','0'],[11,'Pong','-'],[12,'Świetliki','=']];
+const KEYS = {};
+MODES.forEach(([id,name,key]) => {
+  KEYS[key] = id;
+  const b = document.createElement('button');
+  b.dataset.mode = id; b.textContent = name; b.title = 'klawisz ' + key;
+  $('modes').appendChild(b);
+});
+function save(){
+  try {
+    localStorage.setItem('kinetyka', JSON.stringify({
+      thr:$('thr').value, force:$('force').value, count:$('count').value, bpm:$('bpm').value,
+      scale:S.scale, instr:S.instr, detect:S.detect, showCam:S.showCam, sound:S.sound, mirror:S.mirror,
+      metro:S.metro, autoThr:S.autoThr, twoPlayer:S.twoPlayer, finger:S.finger, autoHide:S.autoHide, mode:S.mode, roi:S.roi
+    }));
+  } catch (e) {}
+}
+function setMode(m){
+  S.mode = m;
+  newHomes();
+  bubbles.length = 0; pops.length = 0; scoreL = scoreR = 0;
+  pctx.clearRect(0,0,cw,ch); life.fill(0); pile.fill(0);
+  if (m === 11){ pong.ly = pong.ry = ch/2; pongReset(1); }
+  if (m === 7 || m === 12) scatter();
+  S.particles = PDEF[m] !== false;
+  const pcb = $('particles'); if (pcb) pcb.checked = S.particles;
+  save();
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', +b.dataset.mode === m));
+}
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => setMode(+b.dataset.mode));
+setMode(saved.mode || 1);
+function bindRange(id, key, valId, fmt){
+  const el = $(id), out = $(valId);
+  const upd = () => { S[key] = +el.value; out.textContent = fmt ? fmt(S[key]) : S[key]; };
+  el.oninput = upd; upd();
+}
+$('hidePanel').onclick = () => { $('panel').hidden = true; };
+$('gear').onclick = () => { $('panel').hidden = false; lastAct = performance.now(); };
+['pointermove','pointerdown','keydown','input'].forEach(ev => addEventListener(ev, () => { lastAct = performance.now(); }, true));
+for (const id of ['thr','force','count','scale','instr','bpm','detect'])
+  if (saved[id] != null) $(id).value = saved[id];
+['showCam','sound','mirror','metro','autoThr','twoPlayer','finger','autoHide'].forEach(k => {
+  if (saved[k] != null){ $(k).checked = saved[k]; S[k] = saved[k]; }
+});
+if (saved.roi) S.roi = saved.roi;
+bindRange('thr','thr','thrV'); bindRange('force','force','forceV'); bindRange('count','count','countV');
+S.scale = $('scale').value; S.instr = $('instr').value; S.bpm = +$('bpm').value; S.detect = $('detect').value;
+$('scale').onchange = e => { S.scale = e.target.value; ping(0, 0.2); };
+$('instr').onchange = e => { S.instr = e.target.value; ping(2, 0.25); };
+$('bpm').oninput = e => { S.bpm = +e.target.value; };
+['showCam','showMap','sound','mirror','metro','autoThr','kiosk','particles','twoPlayer','finger','autoHide'].forEach(k => {
+  $(k).onchange = e => {
+    S[k] = e.target.checked; prev.fill(0);
+    if (k === 'kiosk' && S.kiosk){ kioskT = performance.now(); $('panel').hidden = true; }
+  };
+});
+$('panel').addEventListener('input', save);
+$('panel').addEventListener('change', save);
+let rec = null, chunks = [];
+$('rec').onclick = () => {
+  if (rec){ rec.stop(); return; }
+  initAudio();
+  const tracks = [...cv.captureStream(30).getVideoTracks(), ...(recDest ? recDest.stream.getAudioTracks() : [])];
+  const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  rec = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType:mime, videoBitsPerSecond:8e6 } : {});
+  chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(chunks, { type:'video/webm' }));
+    a.download = 'kinetyka-' + Date.now() + '.webm'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    rec = null; $('rec').textContent = '● Nagraj'; $('rec').classList.remove('on');
+  };
+  rec.start(); $('rec').textContent = '■ Stop'; $('rec').classList.add('on');
+};
+function shot(){
+  cv.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = 'kinetyka-' + Date.now() + '.png'; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+}
+$('shot').onclick = shot;
+$('hands').onchange = async e => {
+  S.hands = e.target.checked;
+  if (S.hands){
+    const ok = await enableHands();
+    if (!ok){ S.hands = false; e.target.checked = false; }
+  } else { hands = []; $('handStatus').textContent = ''; }
+};
+$('mic').onchange = async e => {
+  S.mic = e.target.checked;
+  if (S.mic){
+    try { await enableMic(); }
+    catch (err) { S.mic = false; e.target.checked = false; alert('Mikrofon niedostępny: ' + err.message); }
+  }
+};
+$('detect').onchange = e => { S.detect = e.target.value; prev.fill(0); motion.fill(0); calibrate(); };
+$('cal').onclick = calibrate;
+$('camBtn').onclick = () => startCam().catch(err => alert('Kamera niedostępna: ' + err.message));
+let selecting = false, selRect = null;
+$('roiBtn').onclick = () => { selecting = true; selRect = null; $('roiBtn').classList.add('on'); };
+$('roiReset').onclick = () => { S.roi = null; save(); };
+cv.addEventListener('pointerdown', e => {
+  if (selecting){ selRect = { x0:e.clientX, y0:e.clientY, x1:e.clientX, y1:e.clientY }; return; }
+  ptr.on = true; ptr.x = e.clientX; ptr.y = e.clientY;
+});
+cv.addEventListener('pointermove', e => {
+  if (selecting){ if (selRect && e.buttons){ selRect.x1 = e.clientX; selRect.y1 = e.clientY; } return; }
+  ptr.x = e.clientX; ptr.y = e.clientY;
+  ptr.on = !(e.buttons === 0 && e.pointerType === 'mouse');
+});
+function endPtr(){
+  if (selecting && selRect){
+    const x0 = Math.min(selRect.x0, selRect.x1)/cw, x1 = Math.max(selRect.x0, selRect.x1)/cw;
+    const y0 = Math.min(selRect.y0, selRect.y1)/ch, y1 = Math.max(selRect.y0, selRect.y1)/ch;
+    if (x1-x0 > 0.05 && y1-y0 > 0.05) S.roi = { x0, y0, x1, y1 };
+    selecting = false; selRect = null; $('roiBtn').classList.remove('on'); save();
+  }
+  ptr.on = false;
+}
+addEventListener('pointerup', endPtr);
+addEventListener('pointercancel', endPtr);
+$('cams').onchange = e => startCam(e.target.value).catch(err => alert(err.message));
+$('reset').onclick = scatter;
+function toggleFull(){ document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+$('full').onclick = toggleFull;
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (KEYS[k]) setMode(KEYS[k]);
+  else if (k === 'p') shot();
+  else if (k === 'c') calibrate();
+  else if (e.code === 'Space'){ e.preventDefault(); paused = !paused; }
+  else if (k === 'x') pctx.clearRect(0,0,cw,ch);
+  else if (k === 'f') toggleFull();
+  else if (k === 'h') $('panel').hidden = !$('panel').hidden;
+  else if (k === 'm'){ S.mirror = !S.mirror; $('mirror').checked = S.mirror; prev.fill(0); }
+  else if (k === 'd'){ S.showMap = !S.showMap; $('showMap').checked = S.showMap; }
+  else if (k === 'r') scatter();
+});
+addEventListener('resize', resize);
+
+$('nocam').onclick = () => {
+  initAudio();
+  $('start').remove();
+  $('panel').hidden = false;
+  resize();
+  requestAnimationFrame(loop);
+};
+$('go').onclick = async () => {
+  $('err').textContent = '';
+  try {
+    initAudio();
+    await startCam();
+    $('start').remove();
+    $('panel').hidden = false;
+    resize();
+    requestAnimationFrame(loop);
+  } catch (err) {
+    $('err').textContent = 'Kamera niedostępna: ' + (err && err.message ? err.message : err);
+  }
+};
+})();
+</script>
+</body>
+</html>
