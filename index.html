@@ -111,7 +111,7 @@
     <button id="shot">Zdjęcie (P)</button>
   </div>
   <div class="hint">
-    <kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd> tryby · <kbd>C</kbd> kalibracja · <kbd>Spacja</kbd> pauza · <kbd>H</kbd> ukryj panel · <kbd>M</kbd> lustro · <kbd>D</kbd> mapa ruchu · <kbd>X</kbd> wyczyść pędzel<br>
+    <kbd>1</kbd>–<kbd>9</kbd> <kbd>0</kbd> <kbd>-</kbd> <kbd>=</kbd> <kbd>Q</kbd> <kbd>W</kbd> tryby · <kbd>C</kbd> kalibracja · <kbd>Spacja</kbd> pauza · <kbd>H</kbd> ukryj panel · <kbd>M</kbd> lustro · <kbd>D</kbd> mapa ruchu · <kbd>X</kbd> wyczyść pędzel<br>
     Dłonie: otwarta = odpycha, pięść = przyciąga, szczypta (kciuk+palec wskazujący) = rysuje w Pędzlu; w trybie palca rysuje wyprostowany palec wskazujący (pozostałe zgięte). Wstęga rysuje zawsze.
   </div>
 </div>
@@ -126,7 +126,7 @@
 const S = { mode:1, thr:22, force:1, count:5000, showCam:true, showMap:false, sound:true, mirror:true, hands:false, mic:false, detect:'diff',
   scale:'penta', instr:'triangle', bpm:100, metro:false, autoThr:false, kiosk:false, roi:null, particles:true, twoPlayer:true, finger:false, autoHide:false };
 let lastAct = 0;
-const PDEF = { 4:false, 6:false, 9:false, 10:false, 11:false };   // domyślnie bez cząsteczek
+const PDEF = { 4:false, 6:false, 9:false, 10:false, 11:false, 13:false, 14:false };   // domyślnie bez cząsteczek
 const pops = [];
 let pile = new Float32Array(1), noise = 2, recDest = null;
 let kioskT = 0, kioskI = 0, nextTick = 0, beatN = 0;
@@ -499,6 +499,116 @@ function drawPong(){
   ctx.shadowBlur = 0;
 }
 
+/* ---------- wspólne: dotyk obiektu ruchem lub palcem ---------- */
+function touched(x, y, r){
+  if (!handsOnly()){
+    const o = r*0.6;
+    if (mAt(x,y) > 0.4 || mAt(x+o,y) > 0.4 || mAt(x-o,y) > 0.4 || mAt(x,y+o) > 0.4 || mAt(x,y-o) > 0.4) return true;
+  }
+  for (const hd of hands) if (Math.hypot(hd.tip.x-x, hd.tip.y-y) < r + 14) return true;
+  return false;
+}
+
+/* ---------- żonglerka (odbijanie piłki) ---------- */
+const balls = [];
+let jBest = 0;
+function newBall(){
+  return { x:cw*(0.25 + Math.random()*0.5), y:ch*0.25, vx:(Math.random()-0.5)*4, vy:0, r:Math.max(26, cw/50), cool:0, hue:Math.random()*360 };
+}
+function juggleFrame(){
+  if (!balls.length){ balls.push(newBall()); scoreL = 0; }
+  const kick = Math.sqrt(0.7*ch*0.42);
+  for (let i=0;i<balls.length;i++){
+    const b = balls[i];
+    b.vy += 0.35; b.x += b.vx; b.y += b.vy; if (b.cool > 0) b.cool--;
+    if (b.x < b.r){ b.x = b.r; b.vx = Math.abs(b.vx)*0.8; }
+    else if (b.x > cw-b.r){ b.x = cw-b.r; b.vx = -Math.abs(b.vx)*0.8; }
+    if (b.y < b.r){ b.y = b.r; b.vy = Math.abs(b.vy)*0.5; }
+    if (!b.cool && touched(b.x, b.y, b.r)){
+      let kx = -(mAt(b.x+b.r, b.y) - mAt(b.x-b.r, b.y))*14;
+      for (const hd of hands) if (Math.hypot(hd.tip.x-b.x, hd.tip.y-b.y) < b.r + 40) kx += (b.x - hd.tip.x)*0.12;
+      b.vy = -(kick + Math.random()*2);
+      b.vx = Math.max(-12, Math.min(12, b.vx*0.3 + kx));
+      b.cool = 14; scoreL++;
+      ping(scoreL % 8, 0.22);
+      pops.push({ x:b.x, y:b.y, r:b.r, hue:b.hue, age:0 });
+      burst(b.x, b.y + b.r, 25, 6);
+      if (scoreL % 10 === 0 && balls.length < 4) balls.push(newBall());
+    }
+    if (b.y > ch - b.r){
+      jBest = Math.max(jBest, scoreL);
+      balls.length = 0; ping(0, 0.3);
+      return;
+    }
+  }
+}
+function drawBalls(){
+  for (const b of balls){
+    const g = ctx.createRadialGradient(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.1, b.x, b.y, b.r);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.35, `hsl(${b.hue},95%,65%)`); g.addColorStop(1, `hsl(${b.hue},90%,35%)`);
+    ctx.fillStyle = g; ctx.shadowBlur = 24; ctx.shadowColor = `hsl(${b.hue},100%,60%)`;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.283); ctx.fill(); ctx.shadowBlur = 0;
+  }
+}
+
+/* ---------- łapacz (gwiazdki i bomby) ---------- */
+const items = [];
+let lastItem = 0;
+function catchFrame(now){
+  const total = scoreL + scoreR, rate = Math.max(250, 700 - total*8);
+  if (now - lastItem > rate && items.length < 30){
+    lastItem = now;
+    items.push({ x:40 + Math.random()*(cw-80), y:-30, vy:(2 + Math.random()*2 + total*0.03)*(ch/800),
+                 r:Math.max(24, cw/55), bomb:Math.random() < 0.2, hue:Math.random()*360, spin:0 });
+  }
+  for (let i=items.length-1;i>=0;i--){
+    const it = items[i]; it.y += it.vy; it.spin += 0.05;
+    if (touched(it.x, it.y, it.r)){
+      items.splice(i,1);
+      const left = !S.twoPlayer || it.x < cw/2;
+      if (it.bomb){
+        if (left) scoreL = Math.max(0, scoreL-3); else scoreR = Math.max(0, scoreR-3);
+        ping(0, 0.35); pops.push({ x:it.x, y:it.y, r:it.r*1.5, hue:0, age:0 });
+      } else {
+        if (left) scoreL++; else scoreR++;
+        ping(Math.round(it.hue/360*9), 0.22); pops.push({ x:it.x, y:it.y, r:it.r, hue:it.hue, age:0 });
+        burst(it.x, it.y, 30, 7);
+      }
+      continue;
+    }
+    if (it.y > ch + 40) items.splice(i,1);
+  }
+}
+function drawItems(){
+  for (const it of items){
+    if (it.bomb){
+      ctx.fillStyle = '#1a1a22'; ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(it.x, it.y, it.r, 0, 6.283); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(it.x-it.r*0.4, it.y-it.r*0.4); ctx.lineTo(it.x+it.r*0.4, it.y+it.r*0.4);
+      ctx.moveTo(it.x+it.r*0.4, it.y-it.r*0.4); ctx.lineTo(it.x-it.r*0.4, it.y+it.r*0.4); ctx.stroke();
+    } else {
+      ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.spin);
+      ctx.fillStyle = `hsl(${it.hue},95%,65%)`; ctx.shadowBlur = 18; ctx.shadowColor = ctx.fillStyle;
+      ctx.beginPath();
+      for (let k=0;k<10;k++){
+        const a = k*Math.PI/5 - Math.PI/2, rr = k%2 ? it.r*0.46 : it.r;
+        k ? ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr) : ctx.moveTo(Math.cos(a)*rr, Math.sin(a)*rr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.restore(); ctx.shadowBlur = 0;
+    }
+  }
+}
+function drawPops(){
+  for (let i=pops.length-1;i>=0;i--){
+    const p = pops[i]; p.age++;
+    const a = 1 - p.age/22;
+    if (a <= 0){ pops.splice(i,1); continue; }
+    ctx.lineWidth = 4*a;
+    ctx.strokeStyle = `hsla(${p.hue},95%,80%,${a})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r*(1 + p.age*0.06), 0, 6.283); ctx.stroke();
+  }
+}
+
 /* ---------- bańki (gra) ---------- */
 function mAt(x, y){
   const cx = Math.min(W-1, Math.max(0, (x/cw*W)|0)), cy = Math.min(H-1, Math.max(0, (y/ch*H)|0));
@@ -527,14 +637,7 @@ function bubblesFrame(now){
   }
 }
 function drawBubbles(){
-  for (let i=pops.length-1;i>=0;i--){
-    const p = pops[i]; p.age++;
-    const a = 1 - p.age/22;
-    if (a <= 0){ pops.splice(i,1); continue; }
-    ctx.lineWidth = 4*a;
-    ctx.strokeStyle = `hsla(${p.hue},95%,80%,${a})`;
-    ctx.beginPath(); ctx.arc(p.x, p.y, p.r*(1 + p.age*0.06), 0, 6.283); ctx.stroke();
-  }
+  drawPops();
   for (const b of bubbles){
     ctx.lineWidth = 3;
     ctx.strokeStyle = `hsla(${b.hue},90%,75%,.85)`;
@@ -829,6 +932,9 @@ function draw(t){
   }
 
   if (S.mode === 7) drawPile();
+  if (S.mode === 13) drawBalls();
+  if (S.mode === 14) drawItems();
+  if (S.mode === 13 || S.mode === 14) drawPops();
   if (S.mode === 6) drawBubbles();
   ctx.globalCompositeOperation = 'lighter';
   if (S.mode === 4 || S.mode === 9){
@@ -855,11 +961,17 @@ function draw(t){
   ctx.globalCompositeOperation = 'source-over';
 
   if (S.mode === 11) drawPong();
-  if (S.mode === 6 || S.mode === 11){
+  if (S.mode === 13){
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = '700 64px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(scoreL, cw/2, 80);
+    ctx.font = '600 22px system-ui,sans-serif'; ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.fillText('rekord: ' + Math.max(jBest, scoreL), cw/2, 112);
+  }
+  if (S.mode === 6 || S.mode === 11 || S.mode === 14){
     ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.font = '700 56px system-ui,sans-serif'; ctx.textAlign = 'center';
-    if (S.mode === 6 && !S.twoPlayer) ctx.fillText(scoreL, cw/2, 76);
+    if ((S.mode === 6 || S.mode === 14) && !S.twoPlayer) ctx.fillText(scoreL, cw/2, 76);
     else { ctx.fillText(scoreL, cw*0.25, 76); ctx.fillText(scoreR, cw*0.75, 76); }
-    if (S.mode === 6 && S.twoPlayer){
+    if ((S.mode === 6 || S.mode === 14) && S.twoPlayer){
       ctx.setLineDash([10,14]); ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(cw/2,0); ctx.lineTo(cw/2,ch); ctx.stroke(); ctx.setLineDash([]);
     }
@@ -906,6 +1018,8 @@ function loop(t){
     if (S.mode === 7) sandFrame();
     if (S.mode === 10) lifeFrame();
     if (S.mode === 11) pongFrame();
+    if (S.mode === 13) juggleFrame();
+    if (S.mode === 14) catchFrame(t);
     micFrame(t);
     if (S.mode === 4 || S.mode === 9) brushFrame(t);
     audioFrame(t);
@@ -942,7 +1056,8 @@ async function startCam(deviceId){
 const $ = id => document.getElementById(id);
 const saved = (() => { try { return JSON.parse(localStorage.getItem('kinetyka')) || {}; } catch (e) { return {}; } })();
 const MODES = [[1,'Rozrzut','1'],[2,'Podążaj','2'],[3,'Strefy','3'],[4,'Pędzel','4'],[5,'Sylwetka','5'],[6,'Bańki','6'],
-               [7,'Piasek','7'],[8,'Perkusja','8'],[9,'Wstęga','9'],[10,'Życie','0'],[11,'Pong','-'],[12,'Świetliki','=']];
+               [7,'Piasek','7'],[8,'Perkusja','8'],[9,'Wstęga','9'],[10,'Życie','0'],[11,'Pong','-'],[12,'Świetliki','='],
+               [13,'Żonglerka','q'],[14,'Łapacz','w']];
 const KEYS = {};
 MODES.forEach(([id,name,key]) => {
   KEYS[key] = id;
@@ -963,6 +1078,7 @@ function setMode(m){
   S.mode = m;
   newHomes();
   bubbles.length = 0; pops.length = 0; scoreL = scoreR = 0;
+  balls.length = 0; items.length = 0;
   pctx.clearRect(0,0,cw,ch); life.fill(0); pile.fill(0);
   if (m === 11){ pong.ly = pong.ry = ch/2; pongReset(1); }
   if (m === 7 || m === 12) scatter();
