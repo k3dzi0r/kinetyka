@@ -72,6 +72,8 @@
   <input id="force" type="range" min="0.2" max="3" step="0.1" value="1">
   <label>Liczba cząsteczek: <b id="countV"></b></label>
   <input id="count" type="range" min="500" max="12000" step="500" value="5000">
+  <label>Rozmiar cząsteczek: <b id="sizeV"></b> px</label>
+  <input id="size" type="range" min="1" max="14" step="1" value="3">
   <label>Wykrywanie</label>
   <select id="detect">
     <option value="diff">Ruch (różnica klatek)</option>
@@ -127,7 +129,7 @@
 
 /* ---------- stan ---------- */
 const S = { mode:1, thr:22, force:1, count:5000, showCam:true, showMap:false, sound:true, mirror:true, hands:false, mic:false, detect:'diff',
-  scale:'penta', instr:'triangle', bpm:100, metro:false, autoThr:false, kiosk:false, roi:null, particles:true, twoPlayer:true, finger:false, autoHide:false };
+  scale:'penta', instr:'triangle', bpm:100, metro:false, autoThr:false, kiosk:false, roi:null, particles:true, twoPlayer:true, finger:false, autoHide:false, size:3 };
 let lastAct = 0;
 const PDEF = { 4:false, 6:false, 9:false, 10:false, 11:false, 13:false, 14:false, 15:false, 16:false, 17:false, 19:false };   // domyślnie bez cząsteczek
 const pops = [];
@@ -1137,7 +1139,7 @@ function draw(t){
     drawLife();
   } else if (S.particles){
     const N = S.count, per = Math.ceil(N/B);
-    const sz = cw > 1500 ? 3 : 2;
+    const sz = S.size;
     for (let b=0;b<B;b++){
       const hue = S.mode === 7 ? 28 + b*1.2 : S.mode === 12 ? 50 + b*3 : (b*360/B + t*0.02 + beatFlash*60)%360;
       ctx.fillStyle = `hsla(${hue},100%,${60 + beatFlash*20}%,.85)`;
@@ -1267,7 +1269,7 @@ MODES.forEach(([id,name,key]) => {
 function save(){
   try {
     localStorage.setItem('kinetyka', JSON.stringify({
-      txt:$('txt').value, thr:$('thr').value, force:$('force').value, count:$('count').value, bpm:$('bpm').value,
+      txt:$('txt').value, thr:$('thr').value, force:$('force').value, count:$('count').value, size:$('size').value, bpm:$('bpm').value,
       scale:S.scale, instr:S.instr, detect:S.detect, showCam:S.showCam, sound:S.sound, mirror:S.mirror,
       metro:S.metro, autoThr:S.autoThr, twoPlayer:S.twoPlayer, finger:S.finger, autoHide:S.autoHide, mode:S.mode, roi:S.roi
     }));
@@ -1301,13 +1303,13 @@ $('txt').addEventListener('keydown', e => e.stopPropagation());
 $('hidePanel').onclick = () => { $('panel').hidden = true; };
 $('gear').onclick = () => { $('panel').hidden = false; lastAct = performance.now(); };
 ['pointermove','pointerdown','keydown','input'].forEach(ev => addEventListener(ev, () => { lastAct = performance.now(); }, true));
-for (const id of ['thr','force','count','scale','instr','bpm','detect'])
+for (const id of ['thr','force','count','size','scale','instr','bpm','detect'])
   if (saved[id] != null) $(id).value = saved[id];
 ['showCam','sound','mirror','metro','autoThr','twoPlayer','finger','autoHide'].forEach(k => {
   if (saved[k] != null){ $(k).checked = saved[k]; S[k] = saved[k]; }
 });
 if (saved.roi) S.roi = saved.roi;
-bindRange('thr','thr','thrV'); bindRange('force','force','forceV'); bindRange('count','count','countV');
+bindRange('thr','thr','thrV'); bindRange('force','force','forceV'); bindRange('count','count','countV'); bindRange('size','size','sizeV');
 S.scale = $('scale').value; S.instr = $('instr').value; S.bpm = +$('bpm').value; S.detect = $('detect').value;
 $('scale').onchange = e => { S.scale = e.target.value; ping(0, 0.2); };
 $('instr').onchange = e => { S.instr = e.target.value; ping(2, 0.25); };
